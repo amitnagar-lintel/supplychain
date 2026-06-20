@@ -272,6 +272,10 @@ const fmt2=n=>'₹'+(Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits
 const today=()=>new Date().toISOString().slice(0,10);
 const dfmt=d=>d?new Date(d+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const GSTIN_RE=/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const PAN_RE=/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+function validGSTIN(g){return GSTIN_RE.test((g||'').toUpperCase())}
+function validPAN(p){return PAN_RE.test((p||'').toUpperCase())}
 function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2600)}
 function go(t){tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));render()}
 function openM(html){$('modal').innerHTML=html;$('overlay').classList.add('open')}
@@ -486,8 +490,8 @@ function formVendor(id){
   <div class="frow f3"><div class="fld"><label>Contact person</label><input id="f_con" value="${esc(v.contact||'')}"></div>
   <div class="fld"><label>Phone</label><input id="f_ph" value="${esc(v.phone||'')}"></div>
   <div class="fld"><label>Email</label><input id="f_em" value="${esc(v.email||'')}"></div></div>
-  <div class="frow"><div class="fld"><label>GSTIN</label><input id="f_gst" value="${esc(v.gstin||'')}" maxlength="15" style="text-transform:uppercase"></div>
-  <div class="fld"><label>PAN</label><input id="f_pan" value="${esc(v.pan||'')}" maxlength="10" style="text-transform:uppercase"></div></div>
+  <div class="frow"><div class="fld"><label>GSTIN *</label><input id="f_gst" value="${esc(v.gstin||'')}" maxlength="15" style="text-transform:uppercase" placeholder="e.g. 29ABCDE1234F1Z5"></div>
+  <div class="fld"><label>PAN *</label><input id="f_pan" value="${esc(v.pan||'')}" maxlength="10" style="text-transform:uppercase" placeholder="e.g. ABCDE1234F"></div></div>
   <div class="frow f3"><div class="fld"><label>Bank account no.</label><input id="f_acc" value="${esc(v.bankAcc||'')}"></div>
   <div class="fld"><label>IFSC</label><input id="f_ifsc" value="${esc(v.ifsc||'')}" style="text-transform:uppercase"></div>
   <div class="fld"><label>Payment terms</label><input id="f_terms" value="${esc(v.terms||'')}" placeholder="e.g. 30% adv, bal on delivery"></div></div>
@@ -497,11 +501,17 @@ function formVendor(id){
 async function saveVendor(id){
   const name=$('f_name').value.trim();
   if(!name)return toast('Vendor name is required');
+  const gstin=$('f_gst').value.trim().toUpperCase();
+  const pan=$('f_pan').value.trim().toUpperCase();
+  if(!gstin)return toast('GSTIN is mandatory');
+  if(!validGSTIN(gstin))return toast('Invalid GSTIN format — must be 15 characters (e.g. 29ABCDE1234F1Z5)');
+  if(!pan)return toast('PAN is mandatory');
+  if(!validPAN(pan))return toast('Invalid PAN format — must be 10 characters (e.g. ABCDE1234F)');
+  if(gstin.substring(2,12)!==pan)return toast('GSTIN characters 3–12 must match the PAN number');
   const d={name,category:$('f_cat').value,materials:$('f_mat').value.trim(),contact:$('f_con').value.trim(),
-    phone:$('f_ph').value.trim(),email:$('f_em').value.trim(),gstin:$('f_gst').value.trim().toUpperCase(),
-    pan:$('f_pan').value.trim().toUpperCase(),bankAcc:$('f_acc').value.trim(),ifsc:$('f_ifsc').value.trim().toUpperCase(),
+    phone:$('f_ph').value.trim(),email:$('f_em').value.trim(),gstin,
+    pan,bankAcc:$('f_acc').value.trim(),ifsc:$('f_ifsc').value.trim().toUpperCase(),
     terms:$('f_terms').value.trim(),address:$('f_addr').value.trim()};
-  if(d.gstin&&d.gstin.length!==15)return toast('GSTIN must be 15 characters');
   if(id){Object.assign(vById(id),d);}
   else{S.vendors.push({id:nid('V'),kycStatus:'Pending',kycDocs:[],createdBy:user,createdAt:today(),...d});}
   await saveAll();closeM();render();toast(id?'Vendor updated':'Vendor added');
@@ -538,7 +548,16 @@ function viewVendor(id){
   <div class="mfoot"><button class="btn btn-danger" onclick="delVendor('${id}')">Delete vendor</button><div style="flex:1"></div>
   <button class="btn btn-o" onclick="formVendor('${id}')">Edit details</button><button class="btn btn-o" onclick="closeM()">Close</button></div>`);
 }
-async function setKYC(id,st){const v=vById(id);v.kycStatus=st;if((v.kycDocs||[]).length===0&&st!=='Verified')v.kycStatus='Pending';await saveAll();viewVendor(id);render();toast('KYC status: '+st)}
+async function setKYC(id,st){
+  const v=vById(id);
+  if(st==='Verified'){
+    if(!validGSTIN(v.gstin))return toast('Cannot verify — GSTIN is missing or invalid');
+    if(!validPAN(v.pan))return toast('Cannot verify — PAN is missing or invalid');
+    if(!(v.kycDocs||[]).length)return toast('Cannot verify — upload at least one KYC document (GST certificate or PAN)');
+  }
+  v.kycStatus=st;if((v.kycDocs||[]).length===0&&st!=='Verified')v.kycStatus='Pending';
+  await saveAll();viewVendor(id);render();toast('KYC status: '+st);
+}
 async function uploadKYC(id){
   const f=$('kycFile').files[0];if(!f)return;
   if(f.size>5*1024*1024)return toast('File too large — keep KYC files under 5 MB');
@@ -679,7 +698,7 @@ function viewPO(id){
     ${p.status==='Draft'?`<button class="btn btn-p" onclick="setPOStatus('${id}','Released')">Release PO →</button>`:''}
     ${p.status==='Released'?`<button class="btn btn-o" onclick="closeM();formAdvance('${id}')">+ Advance</button>
     <button class="btn btn-o" onclick="closeM();formInvoice('${id}')">+ Invoice</button>
-    <button class="btn btn-o" onclick="closeM();formPayment('${id}')">+ Payment</button>
+    ${f.invCount>0?`<button class="btn btn-o" onclick="closeM();formPayment('${id}')">+ Payment</button>`:`<button class="btn btn-o" disabled title="Receive a tax invoice first" style="opacity:.5">+ Payment (needs invoice)</button>`}
     <button class="btn btn-o" onclick="setPOStatus('${id}','Closed')">Close PO</button>`:''}
     <div style="flex:1"></div>
     <button class="btn btn-o" onclick="printPO('${id}')">🖨 Print</button>
@@ -687,7 +706,105 @@ function viewPO(id){
     <button class="btn btn-o" onclick="closeM()">Close</button></div>`);
 }
 async function setPOStatus(id,st){const p=poById(id);p.status=st;if(st==='Released')p.releasedAt=today();await saveAll();viewPO(id);render();toast('PO '+st.toLowerCase())}
-function printPO(id){viewPO(id);setTimeout(()=>window.print(),200)}
+function printPO(id){
+  const p=poById(id),v=vById(p.vendorId),pr=prById(p.projectId),f=poFin(p);
+  const irows=p.items.map((it,i)=>`<tr><td style="text-align:center">${i+1}</td><td>${esc(it.desc)}</td><td style="text-align:center">${esc(it.unit)}</td><td style="text-align:right">${it.qty}</td><td style="text-align:right">${fmt2(it.rate)}</td><td style="text-align:right">${fmt2(it.qty*it.rate)}</td></tr>`).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>PO ${p.id}</title>
+<style>
+@page{size:A4;margin:18mm 15mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Times New Roman',Times,serif;font-size:12px;color:#0D0D27;line-height:1.5}
+.po-head{display:flex;align-items:center;gap:16px;border-bottom:2px solid #C9A55A;padding-bottom:12px;margin-bottom:14px}
+.po-head img{width:64px;height:64px;border-radius:50%;object-fit:contain}
+.po-head .co{flex:1}
+.po-head .co h1{font-size:18px;letter-spacing:3px;text-transform:uppercase;color:#0D0D27;font-weight:400}
+.po-head .co p{font-size:10px;color:#6B6560;margin-top:2px}
+.po-title{background:#0D0D27;color:#C9A55A;text-align:center;padding:8px;font-size:16px;letter-spacing:3px;font-weight:400;margin-bottom:14px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:14px;border:1px solid #E2DDD6}
+.info-grid .cell{padding:7px 10px;border-bottom:1px solid #E2DDD6;font-size:11.5px}
+.info-grid .cell:nth-child(odd){border-right:1px solid #E2DDD6}
+.info-grid .cell small{display:block;font-size:9.5px;color:#6B6560;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+table.items{width:100%;border-collapse:collapse;margin-bottom:8px}
+table.items th{background:#F2EFE8;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border:1px solid #E2DDD6;color:#6B6560}
+table.items td{padding:6px 8px;border:1px solid #E2DDD6;font-size:11.5px}
+.tots-row{display:flex;justify-content:flex-end;gap:20px;padding:8px 0;font-size:12px;border-bottom:1px solid #E2DDD6}
+.tots-row b{font-family:'Times New Roman',serif}
+.grand{font-size:14px;color:#0D0D27;font-weight:700;border-bottom:2px solid #C9A55A;padding-bottom:6px;margin-bottom:14px}
+.tc{margin-top:16px;page-break-inside:avoid}
+.tc h3{font-size:12px;color:#0D0D27;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #C9A55A;padding-bottom:3px;margin-bottom:8px}
+.tc ol{padding-left:18px;font-size:10.5px;color:#1A1714;line-height:1.6}
+.tc ol li{margin-bottom:4px}
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:40px;font-size:11px}
+.sig-grid .box{border-top:1px solid #0D0D27;padding-top:6px;text-align:center}
+.footer{margin-top:20px;text-align:center;font-size:9.5px;color:#6B6560;border-top:1px solid #E2DDD6;padding-top:8px}
+</style></head><body>
+
+<div class="po-head">
+  <div class="co">
+    <h1>Lintel Space Atelier</h1>
+    <p>Ground Floor, Right Wing, Ramky House, 1st Cross behind Sony Centre, Bengaluru 560043</p>
+    <p>+91 9916558777 · contact@lintelspace.com · www.lintelspace.com</p>
+    <p>GSTIN: 29AAGCL6388Q1ZP · CIN: U74999KA2020PTC138969</p>
+  </div>
+</div>
+
+<div class="po-title">PURCHASE ORDER</div>
+
+<div class="info-grid">
+  <div class="cell"><small>PO Number</small><b>${esc(p.id)}</b></div>
+  <div class="cell"><small>PO Date</small>${dfmt(p.date)}</div>
+  <div class="cell"><small>Project</small>${esc(pr.name||p.project||'')} (${esc(p.projectId||'')})</div>
+  <div class="cell"><small>Client</small>${esc(pr.client||p.client||'')}</div>
+  <div class="cell"><small>Vendor</small><b>${esc(v.name||'')}</b></div>
+  <div class="cell"><small>Vendor GSTIN</small>${esc(v.gstin||'')}</div>
+  <div class="cell"><small>Vendor PAN</small>${esc(v.pan||'')}</div>
+  <div class="cell"><small>Vendor Contact</small>${esc(v.contact||'')} · ${esc(v.phone||'')}</div>
+  <div class="cell"><small>Delivery to site by</small>${dfmt(p.delivery)}</div>
+  <div class="cell"><small>Payment Terms</small>${esc(p.terms||'As per agreement')}</div>
+  <div class="cell" style="grid-column:1/-1"><small>Vendor Address</small>${esc(v.address||'')}</div>
+</div>
+
+<table class="items">
+<thead><tr><th style="width:30px">Sl.</th><th>Description of Material / Work</th><th>Unit</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate (₹)</th><th style="text-align:right">Amount (₹)</th></tr></thead>
+<tbody>${irows}</tbody>
+</table>
+<div class="tots-row">Subtotal: <b>${fmt2(p.sub)}</b></div>
+<div class="tots-row">GST @ ${p.gstP}%: <b>${fmt2(p.gst)}</b></div>
+<div class="tots-row grand">Total PO Value: <b>${fmt2(p.total)}</b></div>
+
+${p.notes?`<p style="font-size:11px;margin-bottom:10px"><b>Special instructions:</b> ${esc(p.notes)}</p>`:''}
+
+<div class="tc">
+<h3>Terms & Conditions</h3>
+<ol>
+<li><b>Acceptance:</b> This Purchase Order becomes binding upon the Vendor's written acknowledgement or commencement of work/supply, whichever is earlier. Any deviations from specifications, pricing or scope require prior written approval from Lintel Space Atelier.</li>
+<li><b>Specifications & quality:</b> All materials and workmanship shall strictly conform to the specifications, drawings, samples and brand/grade mentioned in this PO. Materials must be new, free from defects, and of merchantable quality. Lintel Space Atelier reserves the right to reject and return at Vendor's cost any goods that do not meet the agreed specifications.</li>
+<li><b>Delivery & risk:</b> Delivery shall be made to the project site as specified above on or before the delivery date. Risk of loss or damage remains with the Vendor until materials are delivered, inspected and accepted at site. Partial deliveries are permitted only with prior written consent.</li>
+<li><b>Inspection & acceptance:</b> All materials are subject to inspection and approval by Lintel Space Atelier or its appointed representative at the time of delivery. Acceptance of delivery does not waive the right to reject materials subsequently found defective or non-conforming.</li>
+<li><b>Invoicing:</b> The Vendor shall raise a GST-compliant tax invoice mentioning this PO number, with correct HSN/SAC codes. E-way bill must accompany all inter-state shipments. Invoice without PO reference will not be processed for payment.</li>
+<li><b>Payment:</b> Payment will be processed only after receipt of a valid tax invoice and satisfactory delivery/completion verified by site team. Payment terms are as stated in this PO. TDS shall be deducted at applicable rates as per the Income Tax Act, 1961.</li>
+<li><b>Warranty:</b> The Vendor warrants all materials/work against defects in material and workmanship for a minimum period of 12 months from the date of handover to the end client, or 18 months from the date of supply to Lintel Space Atelier, whichever is later. Defective materials shall be replaced at the Vendor's cost including transportation and installation.</li>
+<li><b>Liquidated damages:</b> In case of delay in delivery beyond the agreed date without prior written approval, Lintel Space Atelier may deduct 0.5% of the PO value per week of delay, up to a maximum of 5% of the PO value, as liquidated damages.</li>
+<li><b>Confidentiality:</b> The Vendor shall not disclose any client details, project information, design drawings, BOQ or pricing shared by Lintel Space Atelier to any third party without prior written consent.</li>
+<li><b>Indemnity:</b> The Vendor shall indemnify and hold harmless Lintel Space Atelier against all claims, damages and losses arising from defective materials, third-party IP infringement, or non-compliance with applicable laws.</li>
+<li><b>Statutory compliance:</b> The Vendor shall comply with all applicable laws including GST, labour laws, environmental regulations, and building codes. Vendor's GSTIN and PAN must be valid and active.</li>
+<li><b>Termination:</b> Lintel Space Atelier may terminate this PO in whole or part by written notice if the Vendor fails to perform any obligation. Upon termination, the Vendor shall be paid only for conforming goods delivered and accepted up to the date of termination.</li>
+<li><b>Jurisdiction:</b> Any disputes arising out of this PO shall be subject to the exclusive jurisdiction of the courts in Bengaluru, Karnataka, India.</li>
+</ol>
+</div>
+
+<div class="sig-grid">
+  <div><div class="box"><b>For Lintel Space Atelier</b><br/>Authorised Signatory</div></div>
+  <div><div class="box"><b>For ${esc(v.name||'Vendor')}</b><br/>Vendor Acknowledgement & Stamp</div></div>
+</div>
+
+<div class="footer">This is a system-generated Purchase Order from Lintel Space Atelier India Private Limited. · Document ref: ${esc(p.id)} · Generated: ${dfmt(today())}</div>
+
+</body></html>`);
+  w.document.close();
+  setTimeout(()=>w.print(),400);
+}
 
 /* ================= ADVANCES ================= */
 function rAdvances(){
@@ -790,9 +907,12 @@ function rPayments(){
 function formPayment(poId){
   const pos=S.pos.filter(p=>p.status!=='Draft'&&p.status!=='Cancelled');
   if(!pos.length)return toast('No active POs');
+  const posWithInv=pos.filter(p=>S.invoices.some(i=>i.poId===p.id));
+  if(!posWithInv.length)return toast('No invoices received yet — payment can only be made after a tax invoice is recorded against the PO');
   openM(`<h3>Record vendor payment</h3>
-  <div class="frow"><div class="fld"><label>Against PO *</label><select id="y_po" onchange="payInvOpts()">${pos.map(p=>`<option value="${p.id}" ${p.id===poId?'selected':''}>${p.id} — ${esc(vById(p.vendorId).name)}</option>`).join('')}</select></div>
-  <div class="fld"><label>Against invoice (optional)</label><select id="y_inv"></select></div></div>
+  <div class="note">Payments are processed only against POs with received tax invoices, as per company policy.</div>
+  <div class="frow"><div class="fld"><label>Against PO *</label><select id="y_po" onchange="payInvOpts()">${posWithInv.map(p=>`<option value="${p.id}" ${p.id===poId?'selected':''}>${p.id} — ${esc(vById(p.vendorId).name)}</option>`).join('')}</select></div>
+  <div class="fld"><label>Against invoice *</label><select id="y_inv"></select></div></div>
   <div class="frow f3"><div class="fld"><label>Payment type</label><select id="y_type"><option>Against invoice</option><option>Part / progress payment</option><option>Final payment</option><option>Retention release</option><option>Debit adjustment</option></select></div>
   <div class="fld"><label>Amount (₹) *</label><input type="number" id="y_amt"></div>
   <div class="fld"><label>Date</label><input type="date" id="y_date" value="${today()}"></div></div>
@@ -805,14 +925,17 @@ function formPayment(poId){
 function payInvOpts(){
   const poId=$('y_po').value;
   const invs=S.invoices.filter(i=>i.poId===poId);
-  $('y_inv').innerHTML=`<option value="">— None / on account —</option>`+invs.map(i=>`<option value="${i.id}">${esc(i.no)} (${fmt(i.total)})</option>`).join('');
+  $('y_inv').innerHTML=invs.length?invs.map(i=>`<option value="${i.id}">${esc(i.no)} (${fmt(i.total)})</option>`).join('')
+    :`<option value="">— No invoices on this PO —</option>`;
   const p=poById(poId),f=poFin(p);
   $('y_hint').innerHTML=`PO <b>${fmt(p.total)}</b> · invoiced <b>${fmt(f.invTot)}</b> · paid incl. advance <b>${fmt(f.paid)}</b> · balance <b style="color:${f.balance>0?'var(--warn)':'var(--ok)'}">${fmt(f.balance)}</b>`;
 }
 async function savePayment(){
   const amt=+$('y_amt').value;
   if(!amt||amt<=0)return toast('Enter a valid amount');
-  S.payments.push({id:nid('PAY'),poId:$('y_po').value,invId:$('y_inv').value||null,type:$('y_type').value,amount:amt,date:$('y_date').value,mode:$('y_mode').value,ref:$('y_ref').value.trim(),by:user});
+  const invId=$('y_inv').value;
+  if(!invId)return toast('Select an invoice — payment requires a received tax invoice');
+  S.payments.push({id:nid('PAY'),poId:$('y_po').value,invId:invId,type:$('y_type').value,amount:amt,date:$('y_date').value,mode:$('y_mode').value,ref:$('y_ref').value.trim(),by:user});
   await saveAll();closeM();render();toast('Payment recorded');
 }
 
