@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lintel Space · Supply Chain Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase 10.x compat SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<style>
+:root{
+  /* Exact brand colors from Lintel Space Atelier brand guidelines (matches BOQ Generator) */
+  --ink:#0D0D27; --ink2:#1A1A40; --paper:#F8F6F0; --card:#FFFFFF;
+  --line:#E2DDD6; --txt:#0D0D27; --mut:#6B6560;
+  --amber:#C9A55A; --amber-d:#A8864C;
+  --gold-light:#FBF5E6; --gold-border:#D4B06A;
+  --ok:#2E7D4F; --ok-bg:#E9F2EC;
+  --warn:#A8864C; --warn-bg:#FBF5E6;
+  --bad:#8C2A20; --bad-bg:#FBE9E7;
+  --info:#2C1F5E; --info-bg:#ECEAF4;
+  --mono:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Times New Roman',Times,Georgia,serif;background:var(--paper);color:var(--txt);font-size:14.5px}
+h1,h2,h3,.disp{font-family:'Times New Roman',Times,Georgia,serif}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:13.5px}
+.num,.ref{font-variant-numeric:tabular-nums}
+
+/* ---------- header ---------- */
+header{background:var(--ink);color:#fff;padding:0 22px}
+.hbar{display:flex;align-items:center;gap:14px;height:62px}
+.logo{display:flex;align-items:center;gap:12px}
+.logo .mark{width:40px;height:40px;border-radius:50%;background:#fff;padding:2px;object-fit:contain;flex-shrink:0}
+.logo b{font-family:'Times New Roman',Times,serif;font-weight:400;font-size:15px;letter-spacing:3px;text-transform:uppercase}
+.logo span{font-size:10.5px;color:var(--amber);display:block;margin-top:2px;letter-spacing:1.5px;text-transform:uppercase}
+.hbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.userbox input{background:var(--ink2);border:1px solid #3A3A60;color:#fff;border-radius:5px;padding:6px 10px;width:140px}
+.userbox input::placeholder{color:#9896A8}
+.btn-sync{background:var(--ink2);border:1px solid #3A3A60;color:#E9C77D;border-radius:5px;padding:6px 12px;font-size:12.5px}
+.btn-sync:hover{border-color:var(--amber);color:#fff}
+nav{display:flex;gap:2px;overflow-x:auto}
+nav button{background:none;border:none;color:#9896A8;padding:11px 15px;font-size:13.5px;letter-spacing:.3px;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.act{color:#E9C77D;border-bottom-color:var(--amber)}
+nav button:hover{color:#fff}
+
+/* ---------- layout ---------- */
+main{max-width:1200px;margin:0 auto;padding:22px}
+.pagehead{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.pagehead h2{font-size:19px;font-weight:700;color:var(--ink)}
+.pagehead .sub{color:var(--mut);font-size:13px}
+.pagehead .grow{flex:1}
+.btn{border:none;border-radius:6px;padding:9px 16px;font-size:13.5px;font-weight:600;letter-spacing:.3px}
+.btn-p{background:var(--amber);color:var(--ink);border:1px solid var(--gold-border)}
+.btn-p:hover{background:var(--amber-d);color:#fff}
+.btn-o{background:#fff;border:1px solid var(--line);color:var(--txt)}
+.btn-o:hover{border-color:var(--gold-border);background:var(--gold-light)}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:5px}
+.btn-danger{background:var(--bad-bg);color:var(--bad)}
+
+/* KPI cards */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut)}
+.kpi .val{font-size:24px;font-weight:700;color:var(--ink);margin-top:5px}
+.kpi .val.money{font-size:19px}
+.kpi.hot{border-left:4px solid var(--amber)}
+
+/* tables */
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.card .chead{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.card .chead h3{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:.3px}
+.card .chead .grow{flex:1}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--mut);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);background:#F2EFE8;font-weight:600}
+td{padding:10px 14px;border-bottom:1px solid #EFECE4;font-size:13.5px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr.click:hover{background:var(--gold-light);cursor:pointer}
+.num{font-family:var(--mono);font-size:13px}
+.ref{font-family:var(--mono);font-size:12.5px;color:var(--amber-d);font-weight:600}
+.empty{padding:36px;text-align:center;color:var(--mut)}
+.empty b{display:block;color:var(--txt);margin-bottom:4px;font-size:14px}
+
+/* chips */
+.chip{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:.3px}
+.c-ok{background:var(--ok-bg);color:var(--ok)} .c-warn{background:var(--warn-bg);color:var(--warn)}
+.c-bad{background:var(--bad-bg);color:var(--bad)} .c-info{background:var(--info-bg);color:var(--info)}
+.c-mut{background:#EEEEE7;color:var(--mut)}
+
+/* pipeline tracker (signature) */
+.pipe{display:flex;align-items:center;gap:0;margin:6px 0}
+.pipe .st{display:flex;flex-direction:column;align-items:center;min-width:74px;position:relative}
+.pipe .dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--mut);z-index:1}
+.pipe .st.done .dot{background:var(--ink);border-color:var(--ink);color:#E9C77D}
+.pipe .st.part .dot{background:var(--amber);border-color:var(--gold-border);color:var(--ink)}
+.pipe .st small{font-size:10.5px;color:var(--mut);margin-top:4px;text-align:center}
+.pipe .st.done small,.pipe .st.part small{color:var(--txt);font-weight:600}
+.pipe .ln{height:2px;background:var(--line);flex:1;min-width:18px;margin-bottom:16px}
+.pipe .ln.done{background:var(--amber)}
+
+/* forms / modal */
+.overlay{position:fixed;inset:0;background:rgba(21,34,44,.55);display:none;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:50;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:10px;width:100%;max-width:680px;padding:22px;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.modal h3{font-size:17px;color:var(--ink);margin-bottom:14px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.frow.f3{grid-template-columns:1fr 1fr 1fr}
+.frow.f1{grid-template-columns:1fr}
+.fld label{display:block;font-size:11.5px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.fld input,.fld select,.fld textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:#fff}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:2px solid var(--amber);border-color:var(--gold-border)}
+.mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.note{font-size:12.5px;color:var(--mut);background:var(--gold-light);border:1px dashed var(--gold-border);border-radius:6px;padding:8px 10px;margin-bottom:12px}
+
+/* PO line items */
+.items th,.items td{padding:7px 8px}
+.items input{width:100%;border:1px solid var(--line);border-radius:5px;padding:6px 8px}
+.tots{display:flex;justify-content:flex-end;gap:26px;padding:12px 16px;background:#F2EFE8;border-top:1px solid var(--line);font-size:13.5px}
+.tots b{font-family:var(--mono)}
+
+/* detail view */
+.dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 22px;padding:14px 16px}
+.dgrid .it small{display:block;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px}
+.dgrid .it span{font-size:13.5px;font-weight:500}
+.searchbar{border:1px solid var(--line);border-radius:6px;padding:8px 12px;width:230px;background:#fff}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 20px;border-radius:8px;font-size:13.5px;display:none;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.kycdoc{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #EFEEE6}
+.kycdoc .ic{width:30px;height:30px;border-radius:6px;background:var(--info-bg);color:var(--info);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+@media print{header,nav,.btn,.noprint{display:none!important}main{max-width:none;padding:0}.card{border:none}}
+@media(max-width:700px){.frow,.frow.f3{grid-template-columns:1fr}.searchbar{width:100%}}
+
+/* ---------- login screen ---------- */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--ink);flex-direction:column;gap:20px}
+#login-screen img{width:120px;height:120px;border-radius:50%;object-fit:contain;background:#fff;padding:4px}
+#login-screen h1{color:#fff;font-family:'Times New Roman',Times,serif;font-size:20px;letter-spacing:4px;text-transform:uppercase}
+#login-sub{color:#9896A8;font-size:13px;text-align:center;line-height:1.7}
+#login-sub strong{color:var(--amber)}
+#login-btn{background:var(--amber);color:var(--ink);border:1px solid var(--gold-border);padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px;letter-spacing:.5px}
+#login-btn:hover{background:var(--amber-d);color:#fff}
+#login-error{color:var(--bad);background:var(--bad-bg);padding:10px 16px;border-radius:6px;display:none;font-size:13px;max-width:360px;text-align:center}
+#app-wrap{display:none}
+</style>
+</head>
+<body>
+
+
+<div id="login-screen">
+  <img src="data:image/jpeg;base64,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" alt="Lintel Space Atelier"/>
+  <h1>Lintel Space Atelier</h1>
+  <div id="login-sub">Use your <strong>@lintelspace.com</strong> Google account.<br/>Access is restricted to Lintel team members only.</div>
+  <button id="login-btn" onclick="signIn()">Sign in with Google</button>
+  <div id="login-error">Access denied. Please use your @lintelspace.com email.</div>
+</div>
+
+<div id="app-wrap">
+<header>
+  <div class="hbar">
+    <div class="logo">
+      <img class="mark" src="data:image/jpeg;base64,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" alt="Lintel Space Atelier"/>
+      <div><b>LINTEL SPACE ATELIER</b><span>Supply Chain Control</span></div>
+    </div>
+    <div class="right">
+      <span id="hdr-user" style="color:#9896A8;font-size:12.5px"></span>
+      <button class="btn-sync" onclick="exportXLSX()">⬇ Export</button>
+      <button class="btn-sync" onclick="loadAll(true)">↻ Refresh</button>
+      <button class="btn-sync" onclick="signOut()" title="Sign out">Sign out</button>
+    </div>
+  </div>
+  <nav id="nav">
+    <button data-t="dash" class="act" onclick="go('dash')">Dashboard</button>
+    <button data-t="projects" onclick="go('projects')">Projects & P&L</button>
+    <button data-t="vendors" onclick="go('vendors')">Vendors & KYC</button>
+    <button data-t="pos" onclick="go('pos')">Purchase Orders</button>
+    <button data-t="advances" onclick="go('advances')">Advances</button>
+    <button data-t="invoices" onclick="go('invoices')">Invoices</button>
+    <button data-t="payments" onclick="go('payments')">Payments & Ledger</button>
+    <button data-t="exprct" onclick="go('exprct')">Expenses & Receipts</button>
+  </nav>
+</header>
+
+<main id="main"><div class="empty"><b>Loading shared data…</b>Connecting to Firebase cloud database.</div></main>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= FIREBASE CONFIG ================= */
+// ⚠️ PASTE YOUR FIREBASE CONFIG HERE — from Firebase Console → Project Settings → Web App
+const firebaseConfig = {
+  apiKey: "AIzaSyANE182qLvSERFEbEHNRXPqFBL5mTgVpOo",
+  authDomain: "lintelspace-scm.firebaseapp.com",
+  projectId: "lintelspace-scm",
+  storageBucket: "lintelspace-scm.firebasestorage.app",
+  messagingSenderId: "647077252857",
+  appId: "1:647077252857:web:74c80e07d61685ae011c28"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const storage = firebase.storage();
+const auth = firebase.auth();
+const DOC_REF = db.collection('lintelspace').doc('scm-v1');
+
+/* ================= AUTH ================= */
+let user = '';
+let userEmail = '';
+
+function signIn() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ hd: 'lintelspace.com' });
+  auth.signInWithPopup(provider).catch(e => {
+    document.getElementById('login-error').style.display = 'block';
+    console.error('Auth error:', e);
+  });
+}
+function signOut() {
+  auth.signOut();
+}
+auth.onAuthStateChanged(u => {
+  if (u) {
+    const domain = u.email.split('@')[1];
+    if (domain !== 'lintelspace.com') {
+      document.getElementById('login-error').style.display = 'block';
+      auth.signOut();
+      return;
+    }
+    user = u.displayName || u.email.split('@')[0];
+    userEmail = u.email;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-wrap').style.display = 'block';
+    document.getElementById('hdr-user').textContent = user;
+    loadAll();
+  } else {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app-wrap').style.display = 'none';
+    document.getElementById('login-error').style.display = 'none';
+  }
+});
+
+/* ================= STATE & FIRESTORE STORAGE ================= */
+let S={projects:[],vendors:[],pos:[],advances:[],invoices:[],payments:[],expenses:[],receipts:[],seq:{PRJ:0,V:0,PO:0,ADV:0,INV:0,PAY:0,EXP:0,RCT:0}};
+let tab='dash';
+
+async function loadAll(showMsg){
+  try{
+    const snap = await DOC_REF.get();
+    if(snap.exists) S = snap.data();
+  }catch(e){ console.error('Load error:', e); }
+  // backward-compat defaults
+  S.projects=S.projects||[];S.seq=S.seq||{};
+  ['PRJ','V','PO','ADV','INV','PAY','EXP','RCT'].forEach(k=>S.seq[k]=S.seq[k]||0);
+  S.expenses=S.expenses||[];S.receipts=S.receipts||[];
+  S.vendors=S.vendors||[];S.pos=S.pos||[];S.advances=S.advances||[];
+  S.invoices=S.invoices||[];S.payments=S.payments||[];
+  if(showMsg)toast('Data refreshed from cloud');
+  render();
+}
+async function saveAll(){
+  try{
+    await DOC_REF.set(JSON.parse(JSON.stringify(S)));
+  }catch(e){toast('⚠ Save failed — check connection'); console.error('Save error:', e)}
+}
+function nid(p){S.seq[p]=(S.seq[p]||0)+1;const n=String(S.seq[p]).padStart(3,'0');
+  return p==='PRJ'?'LSP-'+n : p==='V'?'VEN-'+n : p==='PO'?'LS-PO-'+n : p==='ADV'?'ADV-'+n : p==='INV'?'VIN-'+n : p==='EXP'?'EXP-'+n : p==='RCT'?'RCT-'+n : 'PAY-'+n;}
+
+/* ================= HELPERS ================= */
+const $=id=>document.getElementById(id);
+const fmt=n=>'₹'+(Number(n)||0).toLocaleString('en-IN',{maximumFractionDigits:0});
+const fmt2=n=>'₹'+(Number(n)||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const today=()=>new Date().toISOString().slice(0,10);
+const dfmt=d=>d?new Date(d+'T00:00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._x);t._x=setTimeout(()=>t.style.display='none',2600)}
+function go(t){tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('act',b.dataset.t===t));render()}
+function openM(html){$('modal').innerHTML=html;$('overlay').classList.add('open')}
+function closeM(){$('overlay').classList.remove('open')}
+$('overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeM()});
+
+const vById=id=>S.vendors.find(v=>v.id===id)||{};
+const poById=id=>S.pos.find(p=>p.id===id)||{};
+const prById=id=>S.projects.find(p=>p.id===id)||{};
+function prFin(pr){
+  const pos=S.pos.filter(p=>p.projectId===pr.id&&p.status!=='Cancelled');
+  let committed=0,adv=0,inv=0,paid=0;
+  pos.forEach(p=>{const f=poFin(p);committed+=+p.total;adv+=f.adv;inv+=f.invTot;paid+=f.paid});
+  const exp=S.expenses.filter(e=>e.projectId===pr.id).reduce((s,e)=>s+ +e.amount,0);
+  const rcv=S.receipts.filter(r=>r.projectId===pr.id).reduce((s,r)=>s+ +r.amount,0);
+  const value=+pr.value||0, cost=committed+exp;
+  return {poCount:pos.length,committed,adv,inv,paid,exp,rcv,cost,
+    margin:value-cost,marginPct:value?((value-cost)/value*100):0,
+    cash:rcv-paid-exp,budgetLeft:(+pr.budget||0)-committed,toCollect:value-rcv};
+}
+function chipPrj(pr){
+  const m={'Active':'c-ok','On Hold':'c-warn','Completed':'c-info','Closed':'c-mut'};
+  return `<span class="chip ${m[pr.status]||'c-mut'}">${pr.status||'Active'}</span>`;
+}
+function poFin(po){
+  const adv=S.advances.filter(a=>a.poId===po.id).reduce((s,a)=>s+ +a.amount,0);
+  const invs=S.invoices.filter(i=>i.poId===po.id);
+  const invTot=invs.reduce((s,i)=>s+ +i.total,0);
+  const paid=S.payments.filter(p=>p.poId===po.id).reduce((s,p)=>s+ +p.amount,0);
+  return {adv,invTot,invCount:invs.length,paid:paid+adv,paidOnly:paid,balance:(po.total||0)-(paid+adv)};
+}
+function chipPO(po){
+  const m={'Draft':'c-mut','Released':'c-info','Closed':'c-ok','Cancelled':'c-bad'};
+  return `<span class="chip ${m[po.status]||'c-mut'}">${po.status}</span>`;
+}
+function chipKYC(v){
+  const m={'Verified':'c-ok','Submitted':'c-warn','Pending':'c-bad'};
+  return `<span class="chip ${m[v.kycStatus]||'c-bad'}">KYC ${v.kycStatus||'Pending'}</span>`;
+}
+
+/* ================= RENDER ROUTER ================= */
+function render(){
+  const M=$('main');
+  if(tab==='dash')M.innerHTML=rDash();
+  else if(tab==='projects')M.innerHTML=rProjects();
+  else if(tab==='vendors')M.innerHTML=rVendors();
+  else if(tab==='pos')M.innerHTML=rPOs();
+  else if(tab==='advances')M.innerHTML=rAdvances();
+  else if(tab==='invoices')M.innerHTML=rInvoices();
+  else if(tab==='payments')M.innerHTML=rPayments();
+  else if(tab==='exprct')M.innerHTML=rExpRct();
+}
+
+/* ================= DASHBOARD ================= */
+function rDash(){
+  const openPOs=S.pos.filter(p=>p.status==='Released');
+  const poVal=openPOs.reduce((s,p)=>s+ +p.total,0);
+  const advOut=S.pos.reduce((s,p)=>{const f=poFin(p);return s+Math.max(0,f.adv- f.invTot>0?Math.min(f.adv,f.adv-f.paidOnly):0)},0);
+  const totalAdv=S.advances.reduce((s,a)=>s+ +a.amount,0);
+  const totalPaid=S.payments.reduce((s,p)=>s+ +p.amount,0)+totalAdv;
+  const payable=S.pos.filter(p=>p.status!=='Cancelled').reduce((s,p)=>{const f=poFin(p);return s+Math.max(0,f.invTot-f.paid)},0);
+  const kycPend=S.vendors.filter(v=>v.kycStatus!=='Verified').length;
+
+  let rows=S.pos.slice().reverse().slice(0,8).map(p=>{
+    const f=poFin(p),v=vById(p.vendorId);
+    return `<tr class="click" onclick="viewPO('${p.id}')"><td class="ref">${p.id}</td><td>${esc(v.name||'—')}</td><td><span class="ref">${p.projectId||''}</span> ${esc(p.project||'')}</td>
+      <td class="num">${fmt(p.total)}</td><td class="num">${fmt(f.paid)}</td><td class="num" style="color:${f.balance>0?'var(--warn)':'var(--ok)'}">${fmt(f.balance)}</td><td>${chipPO(p)}</td></tr>`;
+  }).join('');
+
+  const prRows=S.projects.filter(p=>p.status==='Active').map(pr=>{
+    const f=prFin(pr);
+    return `<tr class="click" onclick="viewProject('${pr.id}')"><td class="ref">${pr.id}</td><td><b>${esc(pr.name)}</b></td><td>${esc(pr.client||'')}</td>
+    <td class="num">${fmt(pr.value)}</td><td class="num">${fmt(f.cost)}</td><td class="num" style="color:var(--ok)">${fmt(f.rcv)}</td>
+    <td class="num" style="color:${f.cash>=0?'var(--ok)':'var(--bad)'}">${fmt(f.cash)}</td>
+    <td class="num" style="color:${f.margin>=0?'var(--ok)':'var(--bad)'}"><b>${fmt(f.margin)}</b></td></tr>`;
+  }).join('');
+  const totRcv=S.receipts.reduce((s,r)=>s+ +r.amount,0);
+  const totExp=S.expenses.reduce((s,e)=>s+ +e.amount,0);
+
+  return `<div class="pagehead"><h2>Supply Chain Overview</h2><span class="sub">Procure-to-pay status across all projects</span></div>
+  <div class="kpis">
+    <div class="kpi"><div class="lab">Active projects</div><div class="val">${S.projects.filter(p=>p.status==='Active').length}</div></div>
+    <div class="kpi"><div class="lab">Vendors</div><div class="val">${S.vendors.length}</div></div>
+    <div class="kpi ${kycPend?'hot':''}"><div class="lab">KYC pending</div><div class="val">${kycPend}</div></div>
+    <div class="kpi"><div class="lab">Open POs</div><div class="val">${openPOs.length}</div></div>
+    <div class="kpi"><div class="lab">Open PO value</div><div class="val money">${fmt(poVal)}</div></div>
+    <div class="kpi"><div class="lab">Advances released</div><div class="val money">${fmt(totalAdv)}</div></div>
+    <div class="kpi hot"><div class="lab">Invoices payable</div><div class="val money">${fmt(payable)}</div></div>
+    <div class="kpi"><div class="lab">Received from clients</div><div class="val money" style="color:var(--ok)">${fmt(totRcv)}</div></div>
+    <div class="kpi"><div class="lab">Site expenses</div><div class="val money">${fmt(totExp)}</div></div>
+    <div class="kpi"><div class="lab">Total paid out</div><div class="val money">${fmt(totalPaid)}</div></div>
+  </div>
+  ${prRows?`<div class="card"><div class="chead"><h3>Project P&L snapshot</h3><div class="grow"></div><button class="btn btn-o btn-sm" onclick="go('projects')">All projects →</button></div>
+  <div style="overflow-x:auto"><table><tr><th>ID</th><th>Project</th><th>Client</th><th>Contract value</th><th>Total cost</th><th>Received</th><th>Cash position</th><th>Margin</th></tr>${prRows}</table></div></div>`:''}
+  <div class="card"><div class="chead"><h3>Recent purchase orders</h3><div class="grow"></div><button class="btn btn-p btn-sm" onclick="formPO()">+ New PO</button></div>
+  ${S.pos.length?`<div style="overflow-x:auto"><table><tr><th>PO No.</th><th>Vendor</th><th>Project</th><th>PO value</th><th>Paid</th><th>Balance</th><th>Status</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No purchase orders yet</b>Create a project and add a vendor first — then release your PO inside that project.</div>`}</div>
+  <div class="note noprint">This dashboard is backed by Firebase — every team member signed in with their <b>@lintelspace.com</b> Google account sees and edits the same live data. Press <b>Refresh</b> to pull the latest changes, or <b>Export</b> to download a full Excel backup.</div>`;
+}
+
+/* ================= PROJECTS & P&L ================= */
+function rProjects(){
+  const rows=S.projects.slice().reverse().map(pr=>{
+    const f=prFin(pr);
+    return `<tr class="click" onclick="viewProject('${pr.id}')"><td class="ref">${pr.id}</td>
+    <td><b>${esc(pr.name)}</b><br><small style="color:var(--mut)">${esc(pr.location||'')}</small></td>
+    <td>${esc(pr.client||'—')}</td><td class="num">${fmt(pr.value)}</td>
+    <td class="num">${f.poCount} / ${fmt(f.committed)}</td><td class="num">${fmt(f.exp)}</td>
+    <td class="num" style="color:var(--ok)">${fmt(f.rcv)}</td>
+    <td class="num" style="color:${f.margin>=0?'var(--ok)':'var(--bad)'}"><b>${fmt(f.margin)}</b><br><small>${f.marginPct.toFixed(1)}%</small></td>
+    <td>${chipPrj(pr)}</td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Projects & P&L</h2><span class="sub">Every PO, expense and receipt is tagged to a project — margin stays visible</span><div class="grow"></div>
+  <button class="btn btn-p" onclick="formProject()">+ New project</button></div>
+  <div class="card">${S.projects.length?`<div style="overflow-x:auto"><table><tr><th>Project ID</th><th>Project</th><th>Client</th><th>Contract value</th><th>POs / committed</th><th>Expenses</th><th>Received</th><th>Margin (value − cost)</th><th>Status</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No projects yet</b>Create a project with its client and contract value first — POs can only be released inside a project.</div>`}</div>`;
+}
+
+function formProject(id){
+  const pr=id?prById(id):{};
+  openM(`<h3>${id?'Edit project':'New project'}</h3>
+  <div class="frow"><div class="fld"><label>Project name *</label><input id="j_name" value="${esc(pr.name||'')}" placeholder="e.g. Whitefield Villa B-12"></div>
+  <div class="fld"><label>Client name *</label><input id="j_client" value="${esc(pr.client||'')}"></div></div>
+  <div class="frow f3"><div class="fld"><label>Contract value (₹)</label><input type="number" id="j_value" value="${pr.value||''}"></div>
+  <div class="fld"><label>Procurement budget (₹)</label><input type="number" id="j_budget" value="${pr.budget||''}" placeholder="Optional cap for POs"></div>
+  <div class="fld"><label>Status</label><select id="j_status">${['Active','On Hold','Completed','Closed'].map(s=>`<option ${pr.status===s?'selected':''}>${s}</option>`).join('')}</select></div></div>
+  <div class="frow"><div class="fld"><label>Location / site</label><input id="j_loc" value="${esc(pr.location||'')}"></div>
+  <div class="fld"><label>Start date</label><input type="date" id="j_start" value="${pr.start||today()}"></div></div>
+  <div class="frow f1"><div class="fld"><label>Notes</label><input id="j_notes" value="${esc(pr.notes||'')}"></div></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveProject('${id||''}')">${id?'Save changes':'Create project'}</button></div>`);
+}
+async function saveProject(id){
+  const name=$('j_name').value.trim(),client=$('j_client').value.trim();
+  if(!name)return toast('Project name is required');
+  if(!client)return toast('Client name is required');
+  const d={name,client,value:+$('j_value').value||0,budget:+$('j_budget').value||0,status:$('j_status').value,
+    location:$('j_loc').value.trim(),start:$('j_start').value,notes:$('j_notes').value.trim()};
+  if(id){Object.assign(prById(id),d);}
+  else{S.projects.push({id:nid('PRJ'),createdBy:user,createdAt:today(),...d});}
+  await saveAll();closeM();render();toast(id?'Project updated':'Project created — you can now release POs inside it');
+}
+
+function viewProject(id){
+  const pr=prById(id),f=prFin(pr);
+  const pos=S.pos.filter(p=>p.projectId===id).slice().reverse();
+  const rows=pos.map(p=>{
+    const pf=poFin(p),v=vById(p.vendorId);
+    return `<tr class="click" onclick="viewPO('${p.id}')"><td class="ref">${p.id}</td><td>${esc(v.name||'—')}</td>
+    <td class="num">${fmt(p.total)}</td><td class="num">${fmt(pf.adv)}</td><td class="num">${fmt(pf.invTot)}</td>
+    <td class="num">${fmt(pf.paid)}</td><td>${chipPO(p)}</td></tr>`;
+  }).join('');
+  const overBudget=pr.budget&&f.committed>pr.budget;
+  const exps=S.expenses.filter(e=>e.projectId===id).slice().reverse().slice(0,5);
+  const rcts=S.receipts.filter(r=>r.projectId===id).slice().reverse().slice(0,5);
+  openM(`<h3>${esc(pr.name)} <span class="ref">${pr.id}</span></h3>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">${chipPrj(pr)}
+  <span style="color:var(--mut);font-size:12.5px">Client: <b style="color:var(--txt)">${esc(pr.client||'—')}</b> · ${esc(pr.location||'')} · since ${dfmt(pr.start)}</span></div>
+  <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(135px,1fr))">
+    <div class="kpi"><div class="lab">Contract value</div><div class="val money">${fmt(pr.value)}</div></div>
+    <div class="kpi"><div class="lab">Received from client</div><div class="val money" style="color:var(--ok)">${fmt(f.rcv)}</div></div>
+    <div class="kpi ${overBudget?'hot':''}"><div class="lab">PO committed</div><div class="val money">${fmt(f.committed)}</div></div>
+    <div class="kpi"><div class="lab">Site expenses</div><div class="val money">${fmt(f.exp)}</div></div>
+    <div class="kpi"><div class="lab">Total cost</div><div class="val money">${fmt(f.cost)}</div></div>
+    <div class="kpi hot"><div class="lab">Margin (${f.marginPct.toFixed(1)}%)</div><div class="val money" style="color:${f.margin>=0?'var(--ok)':'var(--bad)'}">${fmt(f.margin)}</div></div>
+  </div>
+  <div class="note"><b>Cash position:</b> received ${fmt(f.rcv)} − paid to vendors ${fmt(f.paid)} − expenses ${fmt(f.exp)} =
+  <b style="color:${f.cash>=0?'var(--ok)':'var(--bad)'}">${fmt(f.cash)}</b>
+  &nbsp;·&nbsp; balance to collect from client: <b>${fmt(Math.max(0,f.toCollect))}</b></div>
+  ${pr.budget?`<div class="note">Procurement budget <b>${fmt(pr.budget)}</b> · committed <b>${fmt(f.committed)}</b> · ${overBudget?`<b style="color:var(--bad)">OVER BUDGET by ${fmt(-f.budgetLeft)}</b>`:`remaining <b style="color:var(--ok)">${fmt(f.budgetLeft)}</b>`}</div>`:''}
+  <div class="card"><div class="chead"><h3>POs in this project (${f.poCount})</h3><div class="grow"></div>
+  <button class="btn btn-p btn-sm" onclick="closeM();formPO('${id}')">+ Release PO in this project</button></div>
+  ${rows?`<div style="overflow-x:auto"><table><tr><th>PO No.</th><th>Vendor</th><th>Value</th><th>Advance</th><th>Invoiced</th><th>Paid</th><th>Status</th></tr>${rows}</table></div>`
+  :`<div class="empty">No POs released in this project yet.</div>`}</div>
+  <div class="card"><div class="chead"><h3>Client receipts</h3><div class="grow"></div><button class="btn btn-o btn-sm" onclick="closeM();formReceipt('${id}')">+ Receipt</button></div>
+  ${rcts.length?`<table><tr><th>Date</th><th>Stage</th><th>Amount</th><th>Mode</th></tr>${rcts.map(r=>`<tr><td>${dfmt(r.date)}</td><td>${esc(r.stage)}</td><td class="num">${fmt(r.amount)}</td><td>${esc(r.mode)}</td></tr>`).join('')}</table>`
+  :`<div class="empty">No client receipts recorded.</div>`}</div>
+  <div class="card"><div class="chead"><h3>Site expenses</h3><div class="grow"></div><button class="btn btn-o btn-sm" onclick="closeM();formExpense('${id}')">+ Expense</button></div>
+  ${exps.length?`<table><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr>${exps.map(e=>`<tr><td>${dfmt(e.date)}</td><td>${esc(e.category)}</td><td>${esc(e.desc||'')}</td><td class="num">${fmt(e.amount)}</td></tr>`).join('')}</table>`
+  :`<div class="empty">No site expenses recorded.</div>`}</div>
+  <div class="mfoot"><button class="btn btn-danger" onclick="delProject('${id}')">Delete</button><div style="flex:1"></div>
+  <button class="btn btn-o" onclick="formProject('${id}')">Edit project</button><button class="btn btn-o" onclick="closeM()">Close</button></div>`);
+}
+async function delProject(id){
+  if(S.pos.some(p=>p.projectId===id))return toast('Project has POs — cannot delete');
+  if(!confirm('Delete this project permanently?'))return;
+  S.projects=S.projects.filter(p=>p.id!==id);await saveAll();closeM();render();toast('Project deleted');
+}
+
+/* ================= VENDORS ================= */
+function rVendors(){
+  const q=(window.__vq||'').toLowerCase();
+  const list=S.vendors.filter(v=>!q||(v.name+v.category+v.materials+(v.gstin||'')).toLowerCase().includes(q));
+  const rows=list.map(v=>{
+    const poC=S.pos.filter(p=>p.vendorId===v.id).length;
+    return `<tr class="click" onclick="viewVendor('${v.id}')"><td class="ref">${v.id}</td><td><b>${esc(v.name)}</b><br><small style="color:var(--mut)">${esc(v.materials||'')}</small></td>
+    <td>${esc(v.category||'')}</td><td>${esc(v.contact||'')}<br><small class="num">${esc(v.phone||'')}</small></td>
+    <td class="num">${esc(v.gstin||'—')}</td><td>${poC}</td><td>${chipKYC(v)}</td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Vendor Database</h2><span class="sub">Material suppliers, subcontractors & service vendors</span><div class="grow"></div>
+  <input class="searchbar" placeholder="Search name, material, GSTIN…" value="${esc(window.__vq||'')}" oninput="window.__vq=this.value;render()">
+  <button class="btn btn-p" onclick="formVendor()">+ Add vendor</button></div>
+  <div class="card">${list.length?`<div style="overflow-x:auto"><table><tr><th>ID</th><th>Vendor / materials</th><th>Category</th><th>Contact</th><th>GSTIN</th><th>POs</th><th>KYC</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No vendors yet</b>Add your material suppliers and subcontractors to build the database.</div>`}</div>`;
+}
+
+function formVendor(id){
+  const v=id?vById(id):{};
+  openM(`<h3>${id?'Edit vendor':'Add new vendor'}</h3>
+  <div class="frow"><div class="fld"><label>Vendor / company name *</label><input id="f_name" value="${esc(v.name||'')}"></div>
+  <div class="fld"><label>Category</label><select id="f_cat">${['Material Supplier','Subcontractor','Equipment / Hire','Service Provider','Transport','Other'].map(c=>`<option ${v.category===c?'selected':''}>${c}</option>`).join('')}</select></div></div>
+  <div class="frow f1"><div class="fld"><label>Materials / scope supplied</label><input id="f_mat" value="${esc(v.materials||'')}" placeholder="e.g. Cement, steel, RMC / Plumbing works"></div></div>
+  <div class="frow f3"><div class="fld"><label>Contact person</label><input id="f_con" value="${esc(v.contact||'')}"></div>
+  <div class="fld"><label>Phone</label><input id="f_ph" value="${esc(v.phone||'')}"></div>
+  <div class="fld"><label>Email</label><input id="f_em" value="${esc(v.email||'')}"></div></div>
+  <div class="frow"><div class="fld"><label>GSTIN</label><input id="f_gst" value="${esc(v.gstin||'')}" maxlength="15" style="text-transform:uppercase"></div>
+  <div class="fld"><label>PAN</label><input id="f_pan" value="${esc(v.pan||'')}" maxlength="10" style="text-transform:uppercase"></div></div>
+  <div class="frow f3"><div class="fld"><label>Bank account no.</label><input id="f_acc" value="${esc(v.bankAcc||'')}"></div>
+  <div class="fld"><label>IFSC</label><input id="f_ifsc" value="${esc(v.ifsc||'')}" style="text-transform:uppercase"></div>
+  <div class="fld"><label>Payment terms</label><input id="f_terms" value="${esc(v.terms||'')}" placeholder="e.g. 30% adv, bal on delivery"></div></div>
+  <div class="frow f1"><div class="fld"><label>Address</label><textarea id="f_addr" rows="2">${esc(v.address||'')}</textarea></div></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveVendor('${id||''}')">${id?'Save changes':'Add vendor'}</button></div>`);
+}
+async function saveVendor(id){
+  const name=$('f_name').value.trim();
+  if(!name)return toast('Vendor name is required');
+  const d={name,category:$('f_cat').value,materials:$('f_mat').value.trim(),contact:$('f_con').value.trim(),
+    phone:$('f_ph').value.trim(),email:$('f_em').value.trim(),gstin:$('f_gst').value.trim().toUpperCase(),
+    pan:$('f_pan').value.trim().toUpperCase(),bankAcc:$('f_acc').value.trim(),ifsc:$('f_ifsc').value.trim().toUpperCase(),
+    terms:$('f_terms').value.trim(),address:$('f_addr').value.trim()};
+  if(d.gstin&&d.gstin.length!==15)return toast('GSTIN must be 15 characters');
+  if(id){Object.assign(vById(id),d);}
+  else{S.vendors.push({id:nid('V'),kycStatus:'Pending',kycDocs:[],createdBy:user,createdAt:today(),...d});}
+  await saveAll();closeM();render();toast(id?'Vendor updated':'Vendor added');
+}
+
+function viewVendor(id){
+  const v=vById(id);
+  const pos=S.pos.filter(p=>p.vendorId===id);
+  const ledger=pos.reduce((s,p)=>{const f=poFin(p);s.po+=+p.total;s.paid+=f.paid;return s},{po:0,paid:0});
+  const docs=(v.kycDocs||[]).map((d,i)=>`<div class="kycdoc"><div class="ic">${d.name.split('.').pop().slice(0,3).toUpperCase()}</div>
+    <div style="flex:1"><b style="font-size:13px">${esc(d.type)}</b><br><small style="color:var(--mut)">${esc(d.name)} · ${d.date} · by ${esc(d.by||'—')}</small></div>
+    <button class="btn btn-o btn-sm" onclick="viewDoc('${id}',${i})">View</button>
+    <button class="btn btn-danger btn-sm" onclick="delDoc('${id}',${i})">✕</button></div>`).join('');
+  openM(`<h3>${esc(v.name)} <span style="font-size:12px;color:var(--mut);font-family:var(--mono)">${v.id}</span></h3>
+  <div style="margin-bottom:10px">${chipKYC(v)} <span class="chip c-mut">${esc(v.category||'')}</span></div>
+  <div class="card"><div class="dgrid">
+    <div class="it"><small>Materials / scope</small><span>${esc(v.materials||'—')}</span></div>
+    <div class="it"><small>Contact</small><span>${esc(v.contact||'—')} · ${esc(v.phone||'')}</span></div>
+    <div class="it"><small>Email</small><span>${esc(v.email||'—')}</span></div>
+    <div class="it"><small>GSTIN</small><span class="num">${esc(v.gstin||'—')}</span></div>
+    <div class="it"><small>PAN</small><span class="num">${esc(v.pan||'—')}</span></div>
+    <div class="it"><small>Bank</small><span class="num">${esc(v.bankAcc||'—')} ${v.ifsc?'/ '+esc(v.ifsc):''}</span></div>
+    <div class="it"><small>Payment terms</small><span>${esc(v.terms||'—')}</span></div>
+    <div class="it"><small>Total PO value</small><span class="num">${fmt(ledger.po)}</span></div>
+    <div class="it"><small>Total paid</small><span class="num">${fmt(ledger.paid)}</span></div>
+  </div></div>
+  <div class="card"><div class="chead"><h3>KYC documents</h3><div class="grow"></div>
+    <select id="kycType" style="border:1px solid var(--line);border-radius:5px;padding:5px 8px;font-size:12px">
+      <option>GST Certificate</option><option>PAN Card</option><option>Cancelled Cheque</option><option>MSME / Udyam</option><option>Agreement</option><option>Other</option></select>
+    <input type="file" id="kycFile" style="display:none" onchange="uploadKYC('${id}')">
+    <button class="btn btn-p btn-sm" onclick="$('kycFile').click()">⇪ Upload</button>
+    ${v.kycStatus!=='Verified'?`<button class="btn btn-o btn-sm" onclick="setKYC('${id}','Verified')">✓ Mark verified</button>`:`<button class="btn btn-o btn-sm" onclick="setKYC('${id}','Pending')">Revoke</button>`}
+  </div>${docs||'<div class="empty">No KYC documents uploaded yet. Upload GST certificate, PAN and a cancelled cheque (max 5 MB per file).</div>'}</div>
+  <div class="mfoot"><button class="btn btn-danger" onclick="delVendor('${id}')">Delete vendor</button><div style="flex:1"></div>
+  <button class="btn btn-o" onclick="formVendor('${id}')">Edit details</button><button class="btn btn-o" onclick="closeM()">Close</button></div>`);
+}
+async function setKYC(id,st){const v=vById(id);v.kycStatus=st;if((v.kycDocs||[]).length===0&&st!=='Verified')v.kycStatus='Pending';await saveAll();viewVendor(id);render();toast('KYC status: '+st)}
+async function uploadKYC(id){
+  const f=$('kycFile').files[0];if(!f)return;
+  if(f.size>5*1024*1024)return toast('File too large — keep KYC files under 5 MB');
+  const storagePath=`kyc/${id}/${Date.now()}-${f.name}`;
+  try{
+    toast('Uploading…');
+    const ref=storage.ref(storagePath);
+    await ref.put(f);
+    const url=await ref.getDownloadURL();
+    const v=vById(id);v.kycDocs=v.kycDocs||[];
+    v.kycDocs.push({type:$('kycType').value,name:f.name,path:storagePath,url:url,date:today(),by:user});
+    if(v.kycStatus==='Pending')v.kycStatus='Submitted';
+    await saveAll();viewVendor(id);render();toast('Document uploaded');
+  }catch(e){toast('Upload failed: '+e.message);console.error(e)}
+}
+async function viewDoc(id,i){
+  const d=vById(id).kycDocs[i];
+  try{
+    const url = d.url || await storage.ref(d.path).getDownloadURL();
+    const isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(d.name);
+    openM(`<h3>${esc(d.type)} — ${esc(d.name)}</h3>
+    ${isImg?`<img src="${url}" style="max-width:100%;border:1px solid var(--line);border-radius:6px">`
+    :`<iframe src="${url}" style="width:100%;height:65vh;border:1px solid var(--line);border-radius:6px"></iframe>`}
+    <div class="mfoot"><a class="btn btn-o" href="${url}" target="_blank" style="text-decoration:none">Open / download</a><button class="btn btn-o" onclick="viewVendor('${id}')">Back</button></div>`);
+  }catch(e){toast('Could not load document')}
+}
+async function delDoc(id,i){
+  const v=vById(id);const d=v.kycDocs[i];
+  if(!confirm('Delete '+d.name+'?'))return;
+  try{if(d.path)await storage.ref(d.path).delete()}catch(e){console.warn('Storage delete skipped:',e)}
+  v.kycDocs.splice(i,1);if(!v.kycDocs.length&&v.kycStatus==='Submitted')v.kycStatus='Pending';
+  await saveAll();viewVendor(id);render();
+}
+async function delVendor(id){
+  if(S.pos.some(p=>p.vendorId===id))return toast('Vendor has POs — cannot delete');
+  if(!confirm('Delete this vendor permanently?'))return;
+  S.vendors=S.vendors.filter(v=>v.id!==id);await saveAll();closeM();render();toast('Vendor deleted');
+}
+
+/* ================= PURCHASE ORDERS ================= */
+function rPOs(){
+  const rows=S.pos.slice().reverse().map(p=>{
+    const f=poFin(p),v=vById(p.vendorId);
+    return `<tr class="click" onclick="viewPO('${p.id}')"><td class="ref">${p.id}</td><td>${dfmt(p.date)}</td><td><b>${esc(v.name||'—')}</b></td>
+    <td><span class="ref">${p.projectId||''}</span> ${esc(p.project||'')}<br><small style="color:var(--mut)">${esc(p.client||'')}</small></td><td class="num">${fmt(p.total)}</td><td class="num">${fmt(f.adv)}</td>
+    <td class="num">${f.invCount} / ${fmt(f.invTot)}</td><td class="num">${fmt(f.balance)}</td><td>${chipPO(p)}</td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Purchase Orders</h2><span class="sub">Release & track POs against vendors</span><div class="grow"></div>
+  <button class="btn btn-p" onclick="formPO()">+ New PO</button></div>
+  <div class="card">${S.pos.length?`<div style="overflow-x:auto"><table><tr><th>PO No.</th><th>Date</th><th>Vendor</th><th>Project</th><th>Value</th><th>Advance</th><th>Invoices</th><th>Balance</th><th>Status</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No purchase orders</b>Create a PO with line items, taxes and terms — then release it to the vendor.</div>`}</div>`;
+}
+
+function formPO(projectId){
+  if(!S.projects.filter(p=>p.status==='Active').length)return toast('Create an Active project first — POs are released inside a project');
+  if(!S.vendors.length)return toast('Add a vendor first');
+  window.__items=[{desc:'',unit:'Nos',qty:1,rate:0}];
+  const prjs=S.projects.filter(p=>p.status==='Active');
+  openM(`<h3>New purchase order</h3>
+  <div class="frow f3"><div class="fld"><label>Project *</label><select id="p_prj" onchange="poBudgetHint()">${prjs.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${p.id} — ${esc(p.name)} (${esc(p.client)})</option>`).join('')}</select></div>
+  <div class="fld"><label>Vendor *</label><select id="p_v">${S.vendors.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('')}</select></div>
+  <div class="fld"><label>PO date</label><input type="date" id="p_date" value="${today()}"></div></div>
+  <div class="frow f3"><div class="fld"><label>Delivery by</label><input type="date" id="p_del"></div>
+  <div class="fld"><label>GST %</label><input type="number" id="p_gst" value="18" oninput="calcPO()"></div>
+  <div class="fld"><label>Payment terms</label><input id="p_terms" placeholder="e.g. 30% advance, balance on delivery"></div></div>
+  <div class="card"><div style="overflow-x:auto"><table class="items"><thead><tr><th style="width:40%">Material / item</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr></thead><tbody id="itemRows"></tbody></table></div>
+  <div style="padding:8px 12px"><button class="btn btn-o btn-sm" onclick="addItem()">+ Add line item</button></div>
+  <div class="tots"><span>Subtotal <b id="t_sub">₹0</b></span><span>GST <b id="t_gst">₹0</b></span><span>Total <b id="t_tot" style="color:var(--ink)">₹0</b></span></div></div>
+  <div class="frow f1"><div class="fld"><label>Notes / special conditions</label><input id="p_notes"></div></div>
+  <div class="note" id="p_bhint"></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button>
+  <button class="btn btn-o" onclick="savePO('Draft')">Save as draft</button>
+  <button class="btn btn-p" onclick="savePO('Released')">Release PO →</button></div>`);
+  drawItems();poBudgetHint();
+}
+function poBudgetHint(){
+  const pr=prById($('p_prj').value),f=prFin(pr);
+  $('p_bhint').innerHTML=`<b>${esc(pr.name)}</b> · client ${esc(pr.client||'—')} · contract ${fmt(pr.value)} · already committed in POs <b>${fmt(f.committed)}</b>${pr.budget?` · budget remaining <b style="color:${f.budgetLeft>0?'var(--ok)':'var(--bad)'}">${fmt(f.budgetLeft)}</b>`:''}`;
+}
+function drawItems(){
+  $('itemRows').innerHTML=window.__items.map((it,i)=>`<tr>
+  <td><input value="${esc(it.desc)}" oninput="window.__items[${i}].desc=this.value" placeholder="e.g. OPC 53 Grade Cement"></td>
+  <td><input value="${esc(it.unit)}" style="width:64px" oninput="window.__items[${i}].unit=this.value"></td>
+  <td><input type="number" value="${it.qty}" style="width:80px" oninput="window.__items[${i}].qty=this.value;calcPO()"></td>
+  <td><input type="number" value="${it.rate}" style="width:100px" oninput="window.__items[${i}].rate=this.value;calcPO()"></td>
+  <td class="num" id="amt${i}">${fmt(it.qty*it.rate)}</td>
+  <td>${window.__items.length>1?`<button class="btn btn-danger btn-sm" onclick="window.__items.splice(${i},1);drawItems();calcPO()">✕</button>`:''}</td></tr>`).join('');
+  calcPO();
+}
+function addItem(){window.__items.push({desc:'',unit:'Nos',qty:1,rate:0});drawItems()}
+function calcPO(){
+  const sub=window.__items.reduce((s,it)=>s+(+it.qty||0)*(+it.rate||0),0);
+  const g=sub*((+$('p_gst').value||0)/100);
+  window.__items.forEach((it,i)=>{const e=$('amt'+i);if(e)e.textContent=fmt((+it.qty||0)*(+it.rate||0))});
+  $('t_sub').textContent=fmt2(sub);$('t_gst').textContent=fmt2(g);$('t_tot').textContent=fmt2(sub+g);
+}
+async function savePO(status){
+  const prjId=$('p_prj').value, pr=prById(prjId);
+  const items=window.__items.filter(i=>i.desc.trim());
+  if(!items.length)return toast('Add at least one line item');
+  const sub=items.reduce((s,it)=>s+(+it.qty)*(+it.rate),0);
+  const gstP=+$('p_gst').value||0, gst=sub*gstP/100, total=sub+gst;
+  if(pr.budget&&(prFin(pr).committed+total)>pr.budget&&!confirm('⚠ This PO takes the project OVER its procurement budget. Release anyway?'))return;
+  S.pos.push({id:nid('PO'),projectId:prjId,project:pr.name,client:pr.client,vendorId:$('p_v').value,date:$('p_date').value,delivery:$('p_del').value,
+    terms:$('p_terms').value.trim(),notes:$('p_notes').value.trim(),items,gstP,sub,gst,total,
+    status,releasedAt:status==='Released'?today():null,createdBy:user});
+  await saveAll();closeM();render();toast(status==='Released'?'PO released under '+pr.id:'PO saved as draft');
+}
+
+function viewPO(id){
+  const p=poById(id),v=vById(p.vendorId),f=poFin(p);
+  const steps=[
+    {l:'PO released',d:p.status!=='Draft'},
+    {l:'Advance paid',d:f.adv>0},
+    {l:'Invoice received',d:f.invCount>0},
+    {l:'Payment',d:f.balance<=0&&f.invCount>0,p:f.paidOnly>0&&f.balance>0}
+  ];
+  const pipe=`<div class="pipe">`+steps.map((s,i)=>
+    `${i?`<div class="ln ${steps[i-1].d?'done':''}"></div>`:''}<div class="st ${s.d?'done':s.p?'part':''}"><div class="dot">${s.d?'✓':i+1}</div><small>${s.l}</small></div>`).join('')+`</div>`;
+  const irows=p.items.map(it=>`<tr><td>${esc(it.desc)}</td><td>${esc(it.unit)}</td><td class="num">${it.qty}</td><td class="num">${fmt2(it.rate)}</td><td class="num">${fmt2(it.qty*it.rate)}</td></tr>`).join('');
+  openM(`<h3>Purchase Order <span class="ref">${p.id}</span></h3>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">${chipPO(p)}<span style="color:var(--mut);font-size:12.5px">${dfmt(p.date)} · <span class="ref">${p.projectId||''}</span> ${esc(p.project)} ${p.client?'· Client: '+esc(p.client):''}</span></div>
+  ${pipe}
+  <div class="card"><div class="dgrid">
+    <div class="it"><small>Vendor</small><span><b>${esc(v.name||'—')}</b> ${v.gstin?'· '+v.gstin:''}</span></div>
+    <div class="it"><small>Delivery by</small><span>${dfmt(p.delivery)}</span></div>
+    <div class="it"><small>Payment terms</small><span>${esc(p.terms||'—')}</span></div>
+    <div class="it"><small>PO value (incl. GST ${p.gstP}%)</small><span class="num"><b>${fmt2(p.total)}</b></span></div>
+    <div class="it"><small>Advance paid</small><span class="num">${fmt(f.adv)}</span></div>
+    <div class="it"><small>Invoiced</small><span class="num">${fmt(f.invTot)} (${f.invCount})</span></div>
+    <div class="it"><small>Total paid (incl. advance)</small><span class="num">${fmt(f.paid)}</span></div>
+    <div class="it"><small>Balance on PO</small><span class="num" style="color:${f.balance>0?'var(--warn)':'var(--ok)'}"><b>${fmt(f.balance)}</b></span></div>
+  </div></div>
+  <div class="card"><div style="overflow-x:auto"><table><tr><th>Item</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Amount</th></tr>${irows}</table>
+  <div class="tots"><span>Subtotal <b>${fmt2(p.sub)}</b></span><span>GST ${p.gstP}% <b>${fmt2(p.gst)}</b></span><span>Total <b>${fmt2(p.total)}</b></span></div></div>
+  ${p.notes?`<div class="note">${esc(p.notes)}</div>`:''}
+  <div class="mfoot noprint" style="flex-wrap:wrap">
+    ${p.status==='Draft'?`<button class="btn btn-p" onclick="setPOStatus('${id}','Released')">Release PO →</button>`:''}
+    ${p.status==='Released'?`<button class="btn btn-o" onclick="closeM();formAdvance('${id}')">+ Advance</button>
+    <button class="btn btn-o" onclick="closeM();formInvoice('${id}')">+ Invoice</button>
+    <button class="btn btn-o" onclick="closeM();formPayment('${id}')">+ Payment</button>
+    <button class="btn btn-o" onclick="setPOStatus('${id}','Closed')">Close PO</button>`:''}
+    <div style="flex:1"></div>
+    <button class="btn btn-o" onclick="printPO('${id}')">🖨 Print</button>
+    ${p.status==='Draft'?`<button class="btn btn-danger" onclick="setPOStatus('${id}','Cancelled')">Cancel PO</button>`:''}
+    <button class="btn btn-o" onclick="closeM()">Close</button></div>`);
+}
+async function setPOStatus(id,st){const p=poById(id);p.status=st;if(st==='Released')p.releasedAt=today();await saveAll();viewPO(id);render();toast('PO '+st.toLowerCase())}
+function printPO(id){viewPO(id);setTimeout(()=>window.print(),200)}
+
+/* ================= ADVANCES ================= */
+function rAdvances(){
+  const rows=S.advances.slice().reverse().map(a=>{
+    const p=poById(a.poId),v=vById(p.vendorId);
+    return `<tr><td class="ref">${a.id}</td><td>${dfmt(a.date)}</td><td><b>${esc(v.name||'—')}</b></td>
+    <td class="ref">${a.poId}</td><td class="num">${fmt(a.amount)}</td><td>${esc(a.mode)}</td><td class="num">${esc(a.ref||'—')}</td><td>${esc(a.by||'')}</td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Advances to Vendors</h2><span class="sub">Mobilisation / material advances released against POs</span><div class="grow"></div>
+  <button class="btn btn-p" onclick="formAdvance()">+ Release advance</button></div>
+  <div class="card">${S.advances.length?`<div style="overflow-x:auto"><table><tr><th>Ref</th><th>Date</th><th>Vendor</th><th>Against PO</th><th>Amount</th><th>Mode</th><th>UTR / Cheque</th><th>By</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No advances released</b>Release an advance against a released PO — it auto-adjusts in the vendor ledger.</div>`}</div>`;
+}
+function formAdvance(poId){
+  const pos=S.pos.filter(p=>p.status==='Released');
+  if(!pos.length)return toast('No released POs — release a PO first');
+  openM(`<h3>Release advance</h3>
+  <div class="frow"><div class="fld"><label>Against PO *</label><select id="a_po" onchange="advHint()">${pos.map(p=>`<option value="${p.id}" ${p.id===poId?'selected':''}>${p.id} — ${esc(vById(p.vendorId).name)} (${fmt(p.total)})</option>`).join('')}</select></div>
+  <div class="fld"><label>Date</label><input type="date" id="a_date" value="${today()}"></div></div>
+  <div class="frow f3"><div class="fld"><label>Amount (₹) *</label><input type="number" id="a_amt" oninput="advHint()"></div>
+  <div class="fld"><label>Mode</label><select id="a_mode"><option>NEFT/RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div>
+  <div class="fld"><label>UTR / Cheque no.</label><input id="a_ref"></div></div>
+  <div class="note" id="a_hint"></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveAdvance()">Release advance</button></div>`);
+  advHint();
+}
+function advHint(){
+  const p=poById($('a_po').value),f=poFin(p);const amt=+$('a_amt').value||0;
+  $('a_hint').innerHTML=`PO value <b>${fmt(p.total)}</b> · already paid <b>${fmt(f.paid)}</b> · this advance = <b>${p.total?Math.round(amt/p.total*100):0}%</b> of PO`;
+}
+async function saveAdvance(){
+  const amt=+$('a_amt').value;
+  if(!amt||amt<=0)return toast('Enter a valid amount');
+  S.advances.push({id:nid('ADV'),poId:$('a_po').value,date:$('a_date').value,amount:amt,mode:$('a_mode').value,ref:$('a_ref').value.trim(),by:user});
+  await saveAll();closeM();render();toast('Advance recorded');
+}
+
+/* ================= INVOICES ================= */
+function rInvoices(){
+  const rows=S.invoices.slice().reverse().map(inv=>{
+    const p=poById(inv.poId),v=vById(p.vendorId);
+    const paidAgainst=S.payments.filter(x=>x.invId===inv.id).reduce((s,x)=>s+ +x.amount,0);
+    const st=paidAgainst>=inv.total?'<span class="chip c-ok">Paid</span>':paidAgainst>0?'<span class="chip c-warn">Part paid</span>':'<span class="chip c-info">Payable</span>';
+    const match=Math.abs(poFin(p).invTot-p.total)<1?'<span class="chip c-ok">Matches PO</span>':poFin(p).invTot>p.total?'<span class="chip c-bad">Over PO!</span>':'<span class="chip c-mut">Partial</span>';
+    return `<tr><td class="num"><b>${esc(inv.no)}</b></td><td>${dfmt(inv.date)}</td><td>${esc(v.name||'—')}</td><td class="ref">${inv.poId}</td>
+    <td class="num">${fmt2(inv.total)}</td><td>${match}</td><td>${st}</td><td>${esc(inv.by||'')}</td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Vendor Invoices</h2><span class="sub">Bills received, matched against POs</span><div class="grow"></div>
+  <button class="btn btn-p" onclick="formInvoice()">+ Receive invoice</button></div>
+  <div class="card">${S.invoices.length?`<div style="overflow-x:auto"><table><tr><th>Invoice no.</th><th>Date</th><th>Vendor</th><th>PO</th><th>Amount</th><th>PO match</th><th>Status</th><th>By</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No invoices received</b>When the vendor's bill arrives, record it here against its PO for 3-way matching.</div>`}</div>`;
+}
+function formInvoice(poId){
+  const pos=S.pos.filter(p=>p.status==='Released');
+  if(!pos.length)return toast('No released POs to bill against');
+  openM(`<h3>Receive vendor invoice</h3>
+  <div class="frow"><div class="fld"><label>Against PO *</label><select id="i_po">${pos.map(p=>`<option value="${p.id}" ${p.id===poId?'selected':''}>${p.id} — ${esc(vById(p.vendorId).name)}</option>`).join('')}</select></div>
+  <div class="fld"><label>Vendor invoice no. *</label><input id="i_no"></div></div>
+  <div class="frow f3"><div class="fld"><label>Invoice date</label><input type="date" id="i_date" value="${today()}"></div>
+  <div class="fld"><label>Taxable value (₹)</label><input type="number" id="i_base" oninput="invCalc()"></div>
+  <div class="fld"><label>GST (₹)</label><input type="number" id="i_gst" oninput="invCalc()"></div></div>
+  <div class="frow"><div class="fld"><label>Invoice total (₹) *</label><input type="number" id="i_tot"></div>
+  <div class="fld"><label>Material received OK? (GRN)</label><select id="i_grn"><option>Yes — received & checked</option><option>Partially received</option><option>Not yet received</option></select></div></div>
+  <div class="frow f1"><div class="fld"><label>Remarks</label><input id="i_rem"></div></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveInvoice()">Record invoice</button></div>`);
+}
+function invCalc(){$('i_tot').value=((+$('i_base').value||0)+(+$('i_gst').value||0)).toFixed(2)}
+async function saveInvoice(){
+  const no=$('i_no').value.trim(),tot=+$('i_tot').value;
+  if(!no)return toast('Invoice number required');
+  if(!tot||tot<=0)return toast('Enter invoice total');
+  S.invoices.push({id:nid('INV'),no,poId:$('i_po').value,date:$('i_date').value,base:+$('i_base').value||0,gstAmt:+$('i_gst').value||0,total:tot,grn:$('i_grn').value,remarks:$('i_rem').value.trim(),by:user});
+  await saveAll();closeM();render();toast('Invoice recorded');
+}
+
+/* ================= PAYMENTS & LEDGER ================= */
+function rPayments(){
+  const rows=S.payments.slice().reverse().map(p=>{
+    const po=poById(p.poId),v=vById(po.vendorId);
+    const inv=S.invoices.find(i=>i.id===p.invId);
+    return `<tr><td class="ref">${p.id}</td><td>${dfmt(p.date)}</td><td><b>${esc(v.name||'—')}</b></td><td class="ref">${p.poId}</td>
+    <td class="num">${inv?esc(inv.no):'—'}</td><td>${esc(p.type)}</td><td class="num">${fmt(p.amount)}</td><td>${esc(p.mode)} <small class="num" style="color:var(--mut)">${esc(p.ref||'')}</small></td><td>${esc(p.by||'')}</td></tr>`;
+  }).join('');
+  const led=S.vendors.map(v=>{
+    const pos=S.pos.filter(p=>p.vendorId===v.id&&p.status!=='Cancelled');
+    if(!pos.length)return '';
+    const t=pos.reduce((s,p)=>{const f=poFin(p);s.po+=+p.total;s.adv+=f.adv;s.inv+=f.invTot;s.paid+=f.paid;return s},{po:0,adv:0,inv:0,paid:0});
+    const due=Math.max(0,t.inv-t.paid);
+    return `<tr><td><b>${esc(v.name)}</b></td><td class="num">${fmt(t.po)}</td><td class="num">${fmt(t.adv)}</td><td class="num">${fmt(t.inv)}</td>
+    <td class="num">${fmt(t.paid)}</td><td class="num" style="color:${due>0?'var(--bad)':'var(--ok)'}"><b>${fmt(due)}</b></td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Payments & Vendor Ledger</h2><span class="sub">Outgoing payments and net position per vendor</span><div class="grow"></div>
+  <button class="btn btn-p" onclick="formPayment()">+ Record payment</button></div>
+  <div class="card"><div class="chead"><h3>Vendor ledger (live)</h3></div>
+  ${led?`<div style="overflow-x:auto"><table><tr><th>Vendor</th><th>PO value</th><th>Advances</th><th>Invoiced</th><th>Total paid</th><th>Due now</th></tr>${led}</table></div>`:`<div class="empty">Ledger builds automatically once POs exist.</div>`}</div>
+  <div class="card"><div class="chead"><h3>Payment history</h3></div>
+  ${S.payments.length?`<div style="overflow-x:auto"><table><tr><th>Ref</th><th>Date</th><th>Vendor</th><th>PO</th><th>Invoice</th><th>Type</th><th>Amount</th><th>Mode / UTR</th><th>By</th></tr>${rows}</table></div>`
+  :`<div class="empty"><b>No payments recorded</b>Advances appear in the ledger automatically; record invoice payments here.</div>`}</div>`;
+}
+function formPayment(poId){
+  const pos=S.pos.filter(p=>p.status!=='Draft'&&p.status!=='Cancelled');
+  if(!pos.length)return toast('No active POs');
+  openM(`<h3>Record vendor payment</h3>
+  <div class="frow"><div class="fld"><label>Against PO *</label><select id="y_po" onchange="payInvOpts()">${pos.map(p=>`<option value="${p.id}" ${p.id===poId?'selected':''}>${p.id} — ${esc(vById(p.vendorId).name)}</option>`).join('')}</select></div>
+  <div class="fld"><label>Against invoice (optional)</label><select id="y_inv"></select></div></div>
+  <div class="frow f3"><div class="fld"><label>Payment type</label><select id="y_type"><option>Against invoice</option><option>Part / progress payment</option><option>Final payment</option><option>Retention release</option><option>Debit adjustment</option></select></div>
+  <div class="fld"><label>Amount (₹) *</label><input type="number" id="y_amt"></div>
+  <div class="fld"><label>Date</label><input type="date" id="y_date" value="${today()}"></div></div>
+  <div class="frow"><div class="fld"><label>Mode</label><select id="y_mode"><option>NEFT/RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div>
+  <div class="fld"><label>UTR / Cheque no.</label><input id="y_ref"></div></div>
+  <div class="note" id="y_hint"></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="savePayment()">Record payment</button></div>`);
+  payInvOpts();
+}
+function payInvOpts(){
+  const poId=$('y_po').value;
+  const invs=S.invoices.filter(i=>i.poId===poId);
+  $('y_inv').innerHTML=`<option value="">— None / on account —</option>`+invs.map(i=>`<option value="${i.id}">${esc(i.no)} (${fmt(i.total)})</option>`).join('');
+  const p=poById(poId),f=poFin(p);
+  $('y_hint').innerHTML=`PO <b>${fmt(p.total)}</b> · invoiced <b>${fmt(f.invTot)}</b> · paid incl. advance <b>${fmt(f.paid)}</b> · balance <b style="color:${f.balance>0?'var(--warn)':'var(--ok)'}">${fmt(f.balance)}</b>`;
+}
+async function savePayment(){
+  const amt=+$('y_amt').value;
+  if(!amt||amt<=0)return toast('Enter a valid amount');
+  S.payments.push({id:nid('PAY'),poId:$('y_po').value,invId:$('y_inv').value||null,type:$('y_type').value,amount:amt,date:$('y_date').value,mode:$('y_mode').value,ref:$('y_ref').value.trim(),by:user});
+  await saveAll();closeM();render();toast('Payment recorded');
+}
+
+/* ================= SITE EXPENSES & CLIENT RECEIPTS ================= */
+function rExpRct(){
+  const erows=S.expenses.slice().reverse().map(e=>{
+    const pr=prById(e.projectId);
+    return `<tr><td class="ref">${e.id}</td><td>${dfmt(e.date)}</td><td><span class="ref">${pr.id||''}</span> ${esc(pr.name||'—')}</td>
+    <td>${esc(e.category)}</td><td>${esc(e.desc||'')}</td><td class="num">${fmt(e.amount)}</td><td>${esc(e.mode||'')}</td><td>${esc(e.by||'')}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="delExp('${e.id}')">✕</button></td></tr>`;
+  }).join('');
+  const rrows=S.receipts.slice().reverse().map(r=>{
+    const pr=prById(r.projectId);
+    return `<tr><td class="ref">${r.id}</td><td>${dfmt(r.date)}</td><td><span class="ref">${pr.id||''}</span> ${esc(pr.name||'—')}</td>
+    <td>${esc(pr.client||'')}</td><td>${esc(r.stage||'')}</td><td class="num">${fmt(r.amount)}</td><td>${esc(r.mode||'')} <small class="num" style="color:var(--mut)">${esc(r.ref||'')}</small></td><td>${esc(r.by||'')}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="delRct('${r.id}')">✕</button></td></tr>`;
+  }).join('');
+  return `<div class="pagehead"><h2>Expenses & Client Receipts</h2><span class="sub">Labour, site costs and money received from clients — all project-wise</span><div class="grow"></div>
+  <button class="btn btn-o" onclick="formExpense()">+ Site expense</button>
+  <button class="btn btn-p" onclick="formReceipt()">+ Client receipt</button></div>
+  <div class="card"><div class="chead"><h3>Client receipts (money in)</h3></div>
+  ${rrows?`<div style="overflow-x:auto"><table><tr><th>Ref</th><th>Date</th><th>Project</th><th>Client</th><th>Stage / against</th><th>Amount</th><th>Mode / UTR</th><th>By</th><th></th></tr>${rrows}</table></div>`
+  :`<div class="empty"><b>No receipts yet</b>Record advances and stage payments received from clients here — they feed each project's cash position.</div>`}</div>
+  <div class="card"><div class="chead"><h3>Site expenses (money out, non-PO)</h3></div>
+  ${erows?`<div style="overflow-x:auto"><table><tr><th>Ref</th><th>Date</th><th>Project</th><th>Category</th><th>Description</th><th>Amount</th><th>Mode</th><th>By</th><th></th></tr>${erows}</table></div>`
+  :`<div class="empty"><b>No expenses yet</b>Labour, transport, site consumables and other non-PO costs go here — they count into project cost and margin.</div>`}</div>`;
+}
+
+function formExpense(projectId){
+  if(!S.projects.length)return toast('Create a project first');
+  openM(`<h3>Record site expense</h3>
+  <div class="frow"><div class="fld"><label>Project *</label><select id="e_prj">${S.projects.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${p.id} — ${esc(p.name)}</option>`).join('')}</select></div>
+  <div class="fld"><label>Date</label><input type="date" id="e_date" value="${today()}"></div></div>
+  <div class="frow f3"><div class="fld"><label>Category</label><select id="e_cat">${['Labour','Transport','Equipment hire','Site consumables','Fuel','Food & stay','Statutory / fees','Petty cash','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+  <div class="fld"><label>Amount (₹) *</label><input type="number" id="e_amt"></div>
+  <div class="fld"><label>Mode</label><select id="e_mode"><option>Cash</option><option>UPI</option><option>NEFT/RTGS</option><option>Cheque</option></select></div></div>
+  <div class="frow f1"><div class="fld"><label>Description</label><input id="e_desc" placeholder="e.g. Mason team — 6 days, week 23"></div></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveExpense()">Record expense</button></div>`);
+}
+async function saveExpense(){
+  const amt=+$('e_amt').value;
+  if(!amt||amt<=0)return toast('Enter a valid amount');
+  S.expenses.push({id:nid('EXP'),projectId:$('e_prj').value,date:$('e_date').value,category:$('e_cat').value,amount:amt,mode:$('e_mode').value,desc:$('e_desc').value.trim(),by:user});
+  await saveAll();closeM();render();toast('Expense recorded');
+}
+async function delExp(id){
+  if(!confirm('Delete this expense?'))return;
+  S.expenses=S.expenses.filter(e=>e.id!==id);await saveAll();render();
+}
+
+function formReceipt(projectId){
+  if(!S.projects.length)return toast('Create a project first');
+  openM(`<h3>Record client receipt</h3>
+  <div class="frow"><div class="fld"><label>Project *</label><select id="r_prj" onchange="rctHint()">${S.projects.map(p=>`<option value="${p.id}" ${p.id===projectId?'selected':''}>${p.id} — ${esc(p.name)} (${esc(p.client)})</option>`).join('')}</select></div>
+  <div class="fld"><label>Date</label><input type="date" id="r_date" value="${today()}"></div></div>
+  <div class="frow f3"><div class="fld"><label>Stage / against</label><select id="r_stage">${['Booking advance','Mobilisation advance','Stage payment','Running bill','Final settlement','Retention release','Other'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+  <div class="fld"><label>Amount (₹) *</label><input type="number" id="r_amt" oninput="rctHint()"></div>
+  <div class="fld"><label>Mode</label><select id="r_mode"><option>NEFT/RTGS</option><option>UPI</option><option>Cheque</option><option>Cash</option></select></div></div>
+  <div class="frow"><div class="fld"><label>UTR / Cheque no.</label><input id="r_ref"></div>
+  <div class="fld"><label>Remarks</label><input id="r_rem"></div></div>
+  <div class="note" id="r_hint"></div>
+  <div class="mfoot"><button class="btn btn-o" onclick="closeM()">Cancel</button><button class="btn btn-p" onclick="saveReceipt()">Record receipt</button></div>`);
+  rctHint();
+}
+function rctHint(){
+  const pr=prById($('r_prj').value),f=prFin(pr);
+  $('r_hint').innerHTML=`Contract <b>${fmt(pr.value)}</b> · received so far <b>${fmt(f.rcv)}</b> · balance to collect <b style="color:${f.toCollect>0?'var(--warn)':'var(--ok)'}">${fmt(Math.max(0,f.toCollect))}</b>`;
+}
+async function saveReceipt(){
+  const amt=+$('r_amt').value;
+  if(!amt||amt<=0)return toast('Enter a valid amount');
+  S.receipts.push({id:nid('RCT'),projectId:$('r_prj').value,date:$('r_date').value,stage:$('r_stage').value,amount:amt,mode:$('r_mode').value,ref:$('r_ref').value.trim(),remarks:$('r_rem').value.trim(),by:user});
+  await saveAll();closeM();render();toast('Receipt recorded');
+}
+async function delRct(id){
+  if(!confirm('Delete this receipt?'))return;
+  S.receipts=S.receipts.filter(r=>r.id!==id);await saveAll();render();
+}
+
+/* ================= EXCEL BACKUP EXPORT ================= */
+function exportXLSX(){
+  if(typeof XLSX==='undefined')return toast('Excel library not loaded — check connection and retry');
+  try{
+    const wb=XLSX.utils.book_new();
+    const add=(name,rows)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.length?rows:[{Note:'No records yet'}]),name);
+
+    add('Projects P&L',S.projects.map(pr=>{const f=prFin(pr);return{
+      'Project ID':pr.id,'Project':pr.name,'Client':pr.client,'Location':pr.location||'','Status':pr.status,
+      'Start':pr.start||'','Contract Value':+pr.value||0,'Procurement Budget':+pr.budget||0,
+      'PO Committed':f.committed,'Site Expenses':f.exp,'Total Cost':f.cost,
+      'Received From Client':f.rcv,'Paid To Vendors':f.paid,'Cash Position':f.cash,
+      'Margin':f.margin,'Margin %':+f.marginPct.toFixed(2),'Balance To Collect':Math.max(0,f.toCollect)}}));
+
+    add('Vendors',S.vendors.map(v=>({'Vendor ID':v.id,'Name':v.name,'Category':v.category||'','Materials/Scope':v.materials||'',
+      'Contact':v.contact||'','Phone':v.phone||'','Email':v.email||'','GSTIN':v.gstin||'','PAN':v.pan||'',
+      'Bank A/c':v.bankAcc||'','IFSC':v.ifsc||'','Payment Terms':v.terms||'','Address':v.address||'',
+      'KYC Status':v.kycStatus||'Pending','KYC Docs':(v.kycDocs||[]).map(d=>d.type+': '+d.name).join('; ')})));
+
+    add('Purchase Orders',S.pos.map(p=>{const f=poFin(p),v=vById(p.vendorId);return{
+      'PO No':p.id,'Date':p.date||'','Project ID':p.projectId||'','Project':p.project||'','Client':p.client||'',
+      'Vendor':v.name||'','Vendor GSTIN':v.gstin||'','Status':p.status,'Delivery By':p.delivery||'',
+      'Payment Terms':p.terms||'','Subtotal':+p.sub||0,'GST %':p.gstP,'GST Amt':+p.gst||0,'PO Total':+p.total||0,
+      'Advance Paid':f.adv,'Invoiced':f.invTot,'Total Paid':f.paid,'Balance':f.balance,'Created By':p.createdBy||'','Notes':p.notes||''}}));
+
+    const liRows=[];S.pos.forEach(p=>(p.items||[]).forEach(it=>liRows.push({'PO No':p.id,'Project ID':p.projectId||'',
+      'Vendor':vById(p.vendorId).name||'','Item':it.desc,'Unit':it.unit,'Qty':+it.qty||0,'Rate':+it.rate||0,'Amount':(+it.qty||0)*(+it.rate||0)})));
+    add('PO Line Items',liRows);
+
+    add('Advances',S.advances.map(a=>{const p=poById(a.poId);return{'Ref':a.id,'Date':a.date||'','PO No':a.poId,
+      'Project ID':p.projectId||'','Vendor':vById(p.vendorId).name||'','Amount':+a.amount||0,'Mode':a.mode||'','UTR/Cheque':a.ref||'','By':a.by||''}}));
+
+    add('Invoices',S.invoices.map(i=>{const p=poById(i.poId);const paid=S.payments.filter(x=>x.invId===i.id).reduce((s,x)=>s+ +x.amount,0);return{
+      'Ref':i.id,'Vendor Invoice No':i.no,'Date':i.date||'','PO No':i.poId,'Project ID':p.projectId||'',
+      'Vendor':vById(p.vendorId).name||'','Taxable':+i.base||0,'GST':+i.gstAmt||0,'Total':+i.total||0,
+      'GRN/Material':i.grn||'','Paid Against':paid,'Remarks':i.remarks||'','By':i.by||''}}));
+
+    add('Payments',S.payments.map(p=>{const po=poById(p.poId);const inv=S.invoices.find(i=>i.id===p.invId);return{
+      'Ref':p.id,'Date':p.date||'','PO No':p.poId,'Project ID':po.projectId||'','Vendor':vById(po.vendorId).name||'',
+      'Invoice':inv?inv.no:'','Type':p.type,'Amount':+p.amount||0,'Mode':p.mode||'','UTR/Cheque':p.ref||'','By':p.by||''}}));
+
+    add('Site Expenses',S.expenses.map(e=>{const pr=prById(e.projectId);return{'Ref':e.id,'Date':e.date||'',
+      'Project ID':e.projectId,'Project':pr.name||'','Category':e.category,'Description':e.desc||'','Amount':+e.amount||0,'Mode':e.mode||'','By':e.by||''}}));
+
+    add('Client Receipts',S.receipts.map(r=>{const pr=prById(r.projectId);return{'Ref':r.id,'Date':r.date||'',
+      'Project ID':r.projectId,'Project':pr.name||'','Client':pr.client||'','Stage':r.stage||'','Amount':+r.amount||0,
+      'Mode':r.mode||'','UTR/Cheque':r.ref||'','Remarks':r.remarks||'','By':r.by||''}}));
+
+    add('Vendor Ledger',S.vendors.map(v=>{
+      const pos=S.pos.filter(p=>p.vendorId===v.id&&p.status!=='Cancelled');
+      const t=pos.reduce((s,p)=>{const f=poFin(p);s.po+=+p.total;s.adv+=f.adv;s.inv+=f.invTot;s.paid+=f.paid;return s},{po:0,adv:0,inv:0,paid:0});
+      return{'Vendor':v.name,'GSTIN':v.gstin||'','PO Value':t.po,'Advances':t.adv,'Invoiced':t.inv,'Total Paid':t.paid,'Due Now':Math.max(0,t.inv-t.paid)}}));
+
+    XLSX.writeFile(wb,'LintelSpace-SupplyChain-Backup-'+today()+'.xlsx');
+    toast('Backup downloaded — keep it safe');
+  }catch(e){toast('Export failed: '+e.message)}
+}
+
+/* ================= INIT ================= */
+// Auth state change triggers loadAll() automatically
+
+</script>
+</div>
+</body>
+</html>
